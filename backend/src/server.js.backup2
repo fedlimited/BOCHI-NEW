@@ -34,71 +34,69 @@ const PORT = process.env.PORT || 5000;
 
 
 
-// Configure CORS for all frontend origins
-const allowedOrigins = [
-    'https://bochi-new.vercel.app',
-    'https://bochi.vercel.app',
-    'https://project-dxrv8.vercel.app',
-    'http://localhost:8080',
-    'http://localhost:5173',
-    'http://localhost:3000'
-];
 
 
 // Middleware
 app.use(helmet());
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.options('*', cors());
+
+
+
+
+// Configure CORS for Vercel frontend
+const allowedOrigins = [
+    'https://project-dxrv8.vercel.app',
+    'http://localhost:8080',
+    'http://localhost:5173'
+];
+
+const corsOptions = {
+    origin: function(origin, callback) {
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('Blocked CORS from:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));;
+
+
+
+
+
 app.use(express.json());
 app.use(morgan('dev'));
 
-// ========== PUBLIC ROUTES (NO TOKEN REQUIRED) ==========
-console.log('✅ Registering PUBLIC routes...');
 
-// Root health check for Render
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
 
+
+// ========== PUBLIC ROUTES ==========
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
-// DEBUG: Test route to verify public access (using /test path, NOT /api)
-app.post('/test', (req, res) => {
-  console.log('✅ TEST ROUTE HIT');
-  res.json({ message: 'Test route works!', timestamp: new Date().toISOString() });
 });
 
 // Verify email service on startup
 verifyTransporter().catch(console.error);
 
-// OTP Authentication Routes - Using /auth path (NOT protected by /api middleware)
-app.post('/auth/send-login-otp', otpController.sendLoginOTP);
-app.post('/auth/verify-login-otp', otpController.verifyLoginOTP);
-app.post('/auth/send-registration-otp', otpController.sendRegistrationOTP);
-app.post('/auth/verify-registration-otp', otpController.verifyRegistrationOTP);
-app.post('/auth/resend-otp', otpController.resendOTP);
+// OTP Authentication Routes
+app.post('/api/auth/send-login-otp', otpController.sendLoginOTP);
+app.post('/api/auth/verify-login-otp', otpController.verifyLoginOTP);
+app.post('/api/auth/send-registration-otp', otpController.sendRegistrationOTP);
+app.post('/api/auth/verify-registration-otp', otpController.verifyRegistrationOTP);
+app.post('/api/auth/resend-otp', otpController.resendOTP);
 
 // Traditional login (keep for backward compatibility)
 app.post('/api/auth/login', authController.login);
 app.post('/api/companies/register', companyController.registerCompany);
 
-// ========== PROTECTED ROUTES (TOKEN REQUIRED) ==========
+// ========== PROTECTED ROUTES ==========
 app.use('/api', authenticateToken, requireCompanyAccess);
 
 app.get('/api/auth/me', authController.getCurrentUser);
@@ -215,6 +213,10 @@ app.post('/api/invoices', InvoiceController.createInvoice);
 app.put('/api/invoices/:id', InvoiceController.updateInvoice);
 app.delete('/api/invoices/:id', InvoiceController.deleteInvoice);
 
+
+
+
+
 // ========== LOAD SAMPLE DATA ==========
 app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, res) => {
   try {
@@ -223,15 +225,18 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     
     console.log('Loading comprehensive sample data for company:', company_id);
     
+    // First, clear all existing data
     const tables = ['projects', 'workers', 'income', 'invoices', 'expenses', 'subcontractors', 'suppliers', 'approved_items', 'worker_categories', 'purchase_orders', 'supplies', 'store_transactions', 'site_diary_entries', 'quotations', 'payroll_records'];
     for (const table of tables) {
       try {
         await db.run(`DELETE FROM ${table} WHERE company_id = ?`, [company_id]);
         console.log(`Cleared ${table}`);
-      } catch (e) {}
+      } catch (e) {
+        // Table might not exist
+      }
     }
     
-    // Projects data
+    // ========== 1. PROJECTS ==========
     const projects = [
       { name: 'Nairobi Heights Apartments', client: 'Nairobi Development Corp', contract_sum: 45000000, location: 'Westlands, Nairobi', start_date: '2024-01-15', end_date: '2025-06-30', status: 'Active', project_manager: 'John Maina', description: '15-story luxury apartment building', progress: 35 },
       { name: 'Kisii Teaching Hospital', client: 'Ministry of Health', contract_sum: 125000000, location: 'Kisii Town', start_date: '2024-03-01', end_date: '2026-12-31', status: 'Active', project_manager: 'Dr. Sarah Wanjiku', description: '300-bed teaching hospital', progress: 15 },
@@ -251,7 +256,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${projects.length} projects`);
     
-    // Worker categories
+    // ========== 2. WORKER CATEGORIES ==========
     const categories = [
       { name: 'General Labourer', day_rate: 800, color: '#3b82f6', is_active: 1 },
       { name: 'Skilled Mason', day_rate: 1500, color: '#10b981', is_active: 1 },
@@ -271,7 +276,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${categories.length} worker categories`);
     
-    // Workers
+    // ========== 3. WORKERS ==========
     const workers = [
       { name: 'John Kamau', phone: '+254 711 223344', categoryName: 'General Labourer' },
       { name: 'Peter Ochieng', phone: '+254 722 334455', categoryName: 'Skilled Mason' },
@@ -293,7 +298,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${workers.length} workers`);
     
-    // Subcontractors
+    // ========== 4. SUBCONTRACTORS ==========
     const subcontractors = [
       { name: 'ABC Foundations Ltd', phone: '+254 722 111222', email: 'info@abcfoundations.com', kra_pin: 'P051234567Z', specialization: 'Foundation Works', address: 'Industrial Area, Nairobi', contact_person: 'John Kamau', is_active: 1 },
       { name: 'XYZ Electricals', phone: '+254 733 333444', email: 'info@xyzelectricals.com', kra_pin: 'P059876543Z', specialization: 'Electrical Works', address: 'Westlands, Nairobi', contact_person: 'Jane Wanjiku', is_active: 1 },
@@ -313,7 +318,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${subcontractors.length} subcontractors`);
     
-    // Suppliers
+    // ========== 5. SUPPLIERS ==========
     const suppliers = [
       { name: 'Kenya Cement Ltd', kra_pin: 'P051234567Z', phone: '+254 722 123456', email: 'sales@kenyacement.co.ke', address: 'Industrial Area, Nairobi', contact_person: 'Peter Maina', payment_terms: 'Net 30 days', is_active: 1 },
       { name: 'Steel Masters Ltd', kra_pin: 'P059876543Z', phone: '+254 733 987654', email: 'info@steelmasters.co.ke', address: 'Mombasa Road, Nairobi', contact_person: 'James Otieno', payment_terms: 'Net 45 days', is_active: 1 },
@@ -329,7 +334,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${suppliers.length} suppliers`);
     
-    // Approved Items
+    // ========== 6. APPROVED ITEMS ==========
     const approvedItems = [
       { name: 'Portland Cement', category: 'Materials', unit: 'bags', default_price: 850, description: 'Grade 42.5', is_active: 1 },
       { name: 'Steel Reinforcement Bars', category: 'Materials', unit: 'pieces', default_price: 1200, description: '12mm diameter', is_active: 1 },
@@ -347,7 +352,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${approvedItems.length} approved items`);
     
-    // Quotations
+    // ========== 7. QUOTATIONS ==========
     const quotations = [
       { subcontractor_id: subcontractorIds[0]?.id, subcontractor_name: 'ABC Foundations Ltd', project_id: projectIds[0]?.id, project_name: 'Nairobi Heights Apartments', description: 'Foundation works', amount: 100000, date: '2026-04-01', status: 'Accepted', notes: '' },
       { subcontractor_id: subcontractorIds[1]?.id, subcontractor_name: 'XYZ Electricals', project_id: projectIds[0]?.id, project_name: 'Nairobi Heights Apartments', description: 'Electrical wiring', amount: 75000, date: '2026-04-05', status: 'Pending', notes: '' },
@@ -367,7 +372,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${quotations.length} quotations`);
     
-    // Purchase Orders
+    // ========== 8. PURCHASE ORDERS ==========
     const purchaseOrders = [
       { order_number: 'PO-2026-001', supplier_id: 1, supplier_name: 'Kenya Cement Ltd', project_id: projectIds[0]?.id, project_name: 'Nairobi Heights Apartments', order_date: '2026-04-01', expected_date: '2026-04-15', items: JSON.stringify([{ description: 'Portland Cement', quantity: 500, unit_price: 850, total: 425000 }]), subtotal: 425000, vat: 68000, total: 493000, status: 'Supplied', payment_status: 'Paid', notes: '' },
       { order_number: 'PO-2026-002', supplier_id: 2, supplier_name: 'Steel Masters Ltd', project_id: projectIds[1]?.id, project_name: 'Kisii Teaching Hospital', order_date: '2026-04-02', expected_date: '2026-04-20', items: JSON.stringify([{ description: 'Reinforcement Bars', quantity: 1000, unit_price: 120, total: 120000 }]), subtotal: 120000, vat: 19200, total: 139200, status: 'Ordered', payment_status: 'Unpaid', notes: '' }
@@ -382,7 +387,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${purchaseOrders.length} purchase orders`);
     
-    // Store Transactions
+    // ========== 9. STORE TRANSACTIONS ==========
     const storeTransactions = [
       { date: '2026-04-01', project_id: projectIds[0]?.id, project_name: 'Nairobi Heights Apartments', item_id: 1, item_name: 'Cement Bags', unit: 'Bags', category: 'Materials', quantity_supplied: 500, quantity_issued: 350, quantity_returned: 10, transaction_type: 'Supply', reference: 'PO-2026-001' },
       { date: '2026-04-03', project_id: projectIds[1]?.id, project_name: 'Kisii Teaching Hospital', item_id: 2, item_name: 'Steel Bars', unit: 'Pieces', category: 'Materials', quantity_supplied: 1000, quantity_issued: 600, quantity_returned: 20, transaction_type: 'Supply', reference: 'PO-2026-002' }
@@ -397,7 +402,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${storeTransactions.length} store transactions`);
     
-    // Site Diary Entries
+    // ========== 10. SITE DIARY ENTRIES ==========
     const siteDiaryEntries = [
       { date: '2026-04-06', project_id: projectIds[0]?.id, project_name: 'Nairobi Heights Apartments', weather: JSON.stringify({ condition: 'Sunny', temp: 28 }), total_workers: 25, activities: JSON.stringify([{ description: 'Foundation excavation' }]), challenges: JSON.stringify([]), status: 'Completed' },
       { date: '2026-04-06', project_id: projectIds[1]?.id, project_name: 'Kisii Teaching Hospital', weather: JSON.stringify({ condition: 'Rainy', temp: 22 }), total_workers: 30, activities: JSON.stringify([{ description: 'Roof installation' }]), challenges: JSON.stringify(['Rain delay']), status: 'Completed' }
@@ -412,7 +417,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${siteDiaryEntries.length} site diary entries`);
     
-    // Income
+    // ========== 11. INCOME ==========
     for (const p of projectIds) {
       const amount = 5000000;
       await db.run(
@@ -423,7 +428,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${projectIds.length} income records`);
     
-    // Expenses
+    // ========== 12. EXPENSES ==========
     for (const p of projectIds) {
       await db.run(
         `INSERT INTO expenses (company_id, project_id, project_name, date, category, description, amount, vat, payment_method, status, reference)
@@ -433,7 +438,7 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
     }
     console.log(`✅ Added ${projectIds.length} expense records`);
     
-    // Invoices
+    // ========== 13. INVOICES ==========
     for (const p of projectIds) {
       const amount = 3000000;
       await db.run(
@@ -463,32 +468,53 @@ app.post('/api/load-sample-data', authenticateToken, requireAdmin, async (req, r
   }
 });
 
-// ========== START SERVER (FIXED FOR RENDER) ==========
+
+
+
+
+
+
+// Start server
 async function startServer() {
   try {
     await initializeDatabase();
-    // CRITICAL: '0.0.0.0' binding is required for Render
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📡 Health check: http://localhost:${PORT}/health`);
-      console.log(`📡 API health check: http://localhost:${PORT}/api/health`);
-      console.log(`🔐 Protected endpoints require authentication`);
+    app.listen(PORT, () => {
+      console.log(`🚀 Multi-tenant server running on http://localhost:${PORT}`);
+      console.log(`📝 API endpoints available at http://localhost:${PORT}/api`);
+      console.log(`\nPublic endpoints:`);
+      console.log(`  GET    /api/health`);
+      console.log(`  POST   /api/auth/send-login-otp`);
+      console.log(`  POST   /api/auth/verify-login-otp`);
+      console.log(`  POST   /api/auth/send-registration-otp`);
+      console.log(`  POST   /api/auth/verify-registration-otp`);
+      console.log(`  POST   /api/auth/resend-otp`);
+      console.log(`  POST   /api/auth/login (traditional)`);
+      console.log(`  POST   /api/companies/register`);
+      console.log(`\nProtected endpoints (require token):`);
+      console.log(`  GET    /api/company`);
+      console.log(`  GET    /api/users`);
+      console.log(`  POST   /api/users`);
+      console.log(`  GET    /api/projects`);
+      console.log(`  POST   /api/projects`);
+      console.log(`  GET    /api/workers`);
+      console.log(`  POST   /api/workers`);
+      console.log(`  GET    /api/worker-categories`);
+      console.log(`  POST   /api/worker-categories`);
+      console.log(`  GET    /api/expenses`);
+      console.log(`  POST   /api/expenses`);
+      console.log(`  GET    /api/income`);
+      console.log(`  POST   /api/income`);
+      console.log(`  GET    /api/payroll-records`);
+      console.log(`  POST   /api/payroll-records`);
+      console.log(`  GET    /api/approved-items`);
+      console.log(`  POST   /api/approved-items`);
+      console.log(`  GET    /api/suppliers`);
+      console.log(`  POST   /api/suppliers`);
     });
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
-
-// Graceful shutdown for Render
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, closing gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, closing gracefully...');
-  process.exit(0);
-});
 
 startServer();
