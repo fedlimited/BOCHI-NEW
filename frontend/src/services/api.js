@@ -30,8 +30,7 @@ class ApiService {
 
 
 async request(endpoint, options = {}) {
-  // Hardcoded Render backend URL
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers: this.getHeaders()
