@@ -1,7 +1,7 @@
 console.log('🚀 LOADING api.js WITH RENDER BACKEND URL');
 
 // FORCE FRESH BUILD - APRIL 10 2026
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://bochaberi-backend-9er7.onrender.com/api';
 
 class ApiService {
   constructor() {
